@@ -1,0 +1,17 @@
+[package]
+name = "nxalyzer"
+version = "0.1.0"
+edition = "2024"
+authors = ["Andres Osorio <af.osorio1341@gmail.com>"]
+license = "MIT"
+description = "A simple command line tool to analyze an nx project"
+readme = "README.md"
+repository = "https://github.com/anfelo/nxalyzer"
+keywords = ["cli", "nx", "command-line-utilities", "rust"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.53", features = ["derive"] }
+regex = "1.12.2"
+uuid = { version = "1.11.0", features = ["v4"] }
