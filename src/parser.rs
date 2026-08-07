@@ -25,6 +25,17 @@ static NAMESPACE_IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"import\s+(?:type\s+)?\*\s+as\s+(\w+)\s+from\s*['"]([^'"]+)['"]"#).unwrap()
 });
 
+// import Default, { Named } from '...'
+static MIXED_DEFAULT_NAMED_IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"import\s+(?:type\s+)?(\w+)\s*,\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]"#).unwrap()
+});
+
+// import Default, * as Namespace from '...'
+static MIXED_DEFAULT_NAMESPACE_IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"import\s+(?:type\s+)?(\w+)\s*,\s*\*\s+as\s+(\w+)\s+from\s*['"]([^'"]+)['"]"#)
+        .unwrap()
+});
+
 static LAZY_IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)\.then\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)"#)
         .unwrap()
@@ -256,6 +267,49 @@ impl<'a> Parser<'a> {
                 resolve_import_path(file_path, &import_path, self.root_path)
             {
                 imports.push(ImportInfo::new(name, resolved_path));
+            }
+        }
+
+        // Handle mixed imports: the default clause and the named/namespace clause of the
+        // same declaration are both bindings, not alternatives.
+        // import Default, { Named } from '...'
+        for cap in MIXED_DEFAULT_NAMED_IMPORT_RE.captures_iter(&normalized_content) {
+            let default_name = cap[1].to_string();
+            let names_str = cap[2].to_string();
+            let import_path = cap[3].to_string();
+
+            let resolved_path = match resolve_import_path(file_path, &import_path, self.root_path) {
+                Some(path) => path,
+                None => continue,
+            };
+
+            imports.push(ImportInfo::new(default_name, resolved_path.clone()));
+
+            for name_part in names_str.split(',') {
+                let name_part = name_part.trim();
+                if name_part.is_empty() {
+                    continue;
+                }
+
+                let Some(name) = normalize_named_import(name_part) else {
+                    continue;
+                };
+
+                imports.push(ImportInfo::new(name, resolved_path.clone()));
+            }
+        }
+
+        // import Default, * as Namespace from '...'
+        for cap in MIXED_DEFAULT_NAMESPACE_IMPORT_RE.captures_iter(&normalized_content) {
+            let default_name = cap[1].to_string();
+            let namespace_name = cap[2].to_string();
+            let import_path = cap[3].to_string();
+
+            if let Some(resolved_path) =
+                resolve_import_path(file_path, &import_path, self.root_path)
+            {
+                imports.push(ImportInfo::new(default_name, resolved_path.clone()));
+                imports.push(ImportInfo::new(namespace_name, resolved_path));
             }
         }
 
