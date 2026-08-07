@@ -1,6 +1,6 @@
 [package]
 name = "sting"
-version = "0.1.20"
+version = "0.1.21"
 edition = "2024"
 authors = ["Andres Osorio <af.osorio1341@gmail.com>"]
 license = "MIT"

@@ -865,24 +865,28 @@ fn detect_dom_listeners(
         });
     }
 
-    let named_add_count = add_named_re.captures_iter(segment).count();
-    let any_add_count = add_any_re.find_iter(segment).count();
-    if any_add_count > named_add_count {
-        for m in add_any_re.find_iter(segment).skip(named_add_count) {
-            if is_listener_on_local_created_element(segment, m.start(), m.end()) {
-                continue;
-            }
-
-            let line = base_line + line_number_at(segment, m.start()) - 1;
-            findings.push(LeakFinding {
-                severity: adjusted_severity(Severity::Medium, uncertain_assignment),
-                line,
-                kind: "dom-listener",
-                message:
-                    "addEventListener with anonymous/non-identifiable handler; cleanup uncertain."
-                        .to_string(),
-            });
+    let named_add_starts: HashSet<usize> = add_named_re
+        .captures_iter(segment)
+        .filter_map(|cap| cap.get(0).map(|m| m.start()))
+        .collect();
+    for m in add_any_re.find_iter(segment) {
+        // A named listener may already have been proven safe above. Do not rely on
+        // occurrence counts here: named and anonymous listeners can be interleaved.
+        if named_add_starts.contains(&m.start()) {
+            continue;
         }
+        if is_listener_on_local_created_element(segment, m.start(), m.end()) {
+            continue;
+        }
+
+        let line = base_line + line_number_at(segment, m.start()) - 1;
+        findings.push(LeakFinding {
+            severity: adjusted_severity(Severity::Medium, uncertain_assignment),
+            line,
+            kind: "dom-listener",
+            message: "addEventListener with anonymous/non-identifiable handler; cleanup uncertain."
+                .to_string(),
+        });
     }
 
     findings
@@ -1204,6 +1208,40 @@ mod tests {
         auto.blacklist.insert("fetchSubscription".to_string());
         let findings = detect_segment_leaks(content, 1, false, Some(&auto), false);
         assert!(findings.iter().any(|f| f.kind == "rxjs-subscription"));
+    }
+
+    #[test]
+    fn suppresses_named_dom_listener_stored_for_later_cleanup() {
+        let content = r#"
+            const listener = (event: MouseEvent): void => event.preventDefault();
+            element.addEventListener('mousedown', listener);
+            this.listener = listener;
+            this.elementWithListener = element;
+
+            if (this.elementWithListener && this.listener) {
+                this.elementWithListener.removeEventListener('mousedown', this.listener);
+            }
+            this.listener = null;
+            this.elementWithListener = null;
+        "#;
+        let findings = detect_segment_leaks(content, 1, false, None, false);
+        assert!(findings.iter().all(|f| f.kind != "dom-listener"));
+    }
+
+    #[test]
+    fn does_not_reclassify_safe_named_listener_after_anonymous_listener() {
+        let content = r#"
+            element.addEventListener('click', () => doSomething());
+            const listener = (event: MouseEvent): void => event.preventDefault();
+            element.addEventListener('mousedown', listener);
+            this.listener = listener;
+            element.removeEventListener('mousedown', this.listener);
+        "#;
+        let findings = detect_segment_leaks(content, 1, false, None, false);
+        assert_eq!(
+            findings.iter().filter(|f| f.kind == "dom-listener").count(),
+            1
+        );
     }
 
     #[test]
