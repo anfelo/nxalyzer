@@ -905,6 +905,99 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_mixed_default_and_named_import() {
+        let content = r#"import getLanguage, { getFileNameDateTimeFormat } from './get-language';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        assert_eq!(imports.len(), 2);
+        assert_eq!(imports[0].name, "getLanguage");
+        assert_eq!(imports[1].name, "getFileNameDateTimeFormat");
+        assert!(imports.iter().all(|i| i.path.contains("get-language")));
+    }
+
+    #[test]
+    fn test_extract_mixed_default_and_multiple_named_imports() {
+        let content = r#"import Foo, { Bar, Baz } from './utils';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        assert_eq!(imports.len(), 3);
+        assert_eq!(imports[0].name, "Foo");
+        assert_eq!(imports[1].name, "Bar");
+        assert_eq!(imports[2].name, "Baz");
+    }
+
+    #[test]
+    fn test_extract_mixed_default_and_multiline_named_imports() {
+        let content = r#"import Foo, {
+  Bar,
+  Baz,
+} from './utils';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        assert_eq!(imports.len(), 3);
+        assert_eq!(imports[0].name, "Foo");
+        assert_eq!(imports[1].name, "Bar");
+        assert_eq!(imports[2].name, "Baz");
+    }
+
+    #[test]
+    fn test_extract_mixed_default_and_aliased_named_imports() {
+        let content = r#"import Foo, { Bar as B, type Baz } from './utils';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        assert_eq!(imports.len(), 3);
+        assert_eq!(imports[0].name, "Foo");
+        assert_eq!(imports[1].name, "Bar");
+        assert_eq!(imports[2].name, "Baz");
+    }
+
+    #[test]
+    fn test_extract_mixed_default_and_namespace_import() {
+        let content = r#"import Foo, * as FooUtils from './utils';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        assert_eq!(imports.len(), 2);
+        assert_eq!(imports[0].name, "Foo");
+        assert_eq!(imports[1].name, "FooUtils");
+    }
+
+    #[test]
+    fn test_mixed_import_does_not_duplicate_bindings() {
+        let content = r#"import Foo, { Bar } from './utils';
+import Qux from './qux';
+import { Quux } from './quux';"#;
+        let root_path = Path::new("/project");
+        let file_path = "/project/src/index.ts";
+
+        let parser = Parser::new(root_path);
+        let imports = parser.extract_imports(content, file_path);
+
+        let mut names: Vec<&str> = imports.iter().map(|i| i.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["Bar", "Foo", "Quux", "Qux"]);
+    }
+
+    #[test]
     fn test_extract_type_only_namespace_import() {
         let content = r#"import type * as FooTypes from './types';"#;
         let root_path = Path::new("/project");
